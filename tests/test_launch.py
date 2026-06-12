@@ -15,10 +15,14 @@ from proteus import launch
 from proteus.utils import load_config
 
 
-def _cfg(project="my-proj", bucket="gs://my-bucket", image="us-docker.pkg.dev/p/r/fold:cu124"):
+def _cfg(project="my-proj", bucket="gs://my-bucket", image="us-docker.pkg.dev/p/r/fold:cu124",
+         accelerator="nvidia-tesla-t4", machine_type="n1-standard-4"):
+    """A gce_burst config with explicit values, so these tests don't couple to
+    whatever project/GPU is shipped in config/proteus.yaml."""
     cfg = copy.deepcopy(load_config())
     cfg.setdefault("compute", {}).setdefault("gce_burst", {})
-    cfg["compute"]["gce_burst"].update(project=project, bucket=bucket, image=image)
+    cfg["compute"]["gce_burst"].update(project=project, bucket=bucket, image=image,
+                                       accelerator=accelerator, machine_type=machine_type)
     return cfg
 
 
@@ -74,7 +78,8 @@ def test_build_plan_orders_the_burst_cycle(tmp_path):
     # create: gcloud compute instances create, with project/zone/accelerator + SPOT
     assert by["create_instance"][:4] == ["gcloud", "compute", "instances", "create"]
     assert "my-proj" in by["create_instance"]
-    assert "type=nvidia-l4,count=1" in by["create_instance"]
+    assert "n1-standard-4" in by["create_instance"]
+    assert "type=nvidia-tesla-t4,count=1" in by["create_instance"]
     assert "SPOT" in by["create_instance"]
     # fold: gcloud ssh runs the fold container against the staged manifest/fasta
     assert by["fold"][:3] == ["gcloud", "compute", "ssh"]
@@ -91,8 +96,9 @@ def test_build_plan_orders_the_burst_cycle(tmp_path):
 
 
 def test_build_plan_uses_placeholders_when_unset(tmp_path):
-    # default config has project/bucket/image blank -> clearly-flagged placeholders
-    plan = launch.build_plan(load_config(), _manifest(tmp_path), _shortlist(tmp_path))
+    # blank project/bucket/image -> clearly-flagged placeholders
+    cfg = _cfg(project="", bucket="", image="")
+    plan = launch.build_plan(cfg, _manifest(tmp_path), _shortlist(tmp_path))
     by = {s["name"]: s["cmd"] for s in plan}
     assert any("PROJECT" in tok for tok in by["create_instance"])
     assert any("BUCKET" in tok for tok in by["stage_up"])

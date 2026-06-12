@@ -204,11 +204,11 @@ compute:
     description: "Google Compute Engine Linux+CUDA burst: ESMFold batch fold (S3), Chai-1 refinement, GPU docking (GNINA/DiffDock). Only the S2 shortlist is shipped up."
     dockerfile: gce/Dockerfile.fold     # build context for the fold image (push to Artifact Registry)
     # Burst launch parameters (proteus.launch plans the up-fold-down cycle from these).
-    project: ""                         # GCP project id (set per host)
-    zone: us-central1-a                 # a zone with the chosen GPU available
+    project: "projProteus"              # GCP project id
+    zone: us-central1-c                 # a zone with the chosen GPU available (T4 is in us-central1-c)
     instance_name: proteus-fold
-    machine_type: g2-standard-8         # L4 GPU machine family (n1-standard-* for T4/V100)
-    accelerator: nvidia-l4              # nvidia-l4 | nvidia-tesla-t4 | nvidia-tesla-a100
+    machine_type: n1-standard-4         # 4 vCPU / 15 GB; N1 family takes the T4 accelerator
+    accelerator: nvidia-tesla-t4        # nvidia-l4 (g2-*) | nvidia-tesla-t4 (n1-*) | nvidia-tesla-a100 (a2-*)
     accelerator_count: 1
     image: ""                           # Artifact Registry fold image (e.g. REGION-docker.pkg.dev/PROJ/REPO/proteus-fold:cu124); blank => set per host
     boot_disk_gb: 100
