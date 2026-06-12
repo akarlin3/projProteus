@@ -16,13 +16,15 @@ from proteus.utils import load_config
 
 
 def _cfg(project="my-proj", bucket="gs://my-bucket", image="us-docker.pkg.dev/p/r/fold:cu124",
-         accelerator="nvidia-tesla-t4", machine_type="n1-standard-4"):
+         accelerator="nvidia-tesla-t4", accelerator_count=1, machine_type="n1-standard-4"):
     """A gce_burst config with explicit values, so these tests don't couple to
-    whatever project/GPU is shipped in config/proteus.yaml."""
+    whatever project/GPU is shipped in config/proteus.yaml. accelerator_count is set
+    explicitly too: an empty accelerator OR count 0 selects the CPU plan."""
     cfg = copy.deepcopy(load_config())
     cfg.setdefault("compute", {}).setdefault("gce_burst", {})
     cfg["compute"]["gce_burst"].update(project=project, bucket=bucket, image=image,
-                                       accelerator=accelerator, machine_type=machine_type)
+                                       accelerator=accelerator, machine_type=machine_type,
+                                       accelerator_count=accelerator_count)
     return cfg
 
 
@@ -93,6 +95,22 @@ def test_build_plan_orders_the_burst_cycle(tmp_path):
     assert by["stage_down"][-1].endswith("structures/folded/")
     assert by["delete_instance"][:4] == ["gcloud", "compute", "instances", "delete"]
     assert "--quiet" in by["delete_instance"]
+
+
+def test_build_plan_cpu_when_no_accelerator(tmp_path):
+    """Empty accelerator (the shipped config, no GPU quota) => CPU plan: COS image,
+    no --accelerator / nvidia driver / --gpus, and run_fold gets --device cpu."""
+    cfg = _cfg(accelerator="", machine_type="c4-highmem-8")
+    plan = launch.build_plan(cfg, _manifest(tmp_path), _shortlist(tmp_path))
+    by = {s["name"]: s["cmd"] for s in plan}
+    create = by["create_instance"]
+    assert "c4-highmem-8" in create
+    assert "--accelerator" not in create
+    assert "cos-stable" in create and "cos-cloud" in create
+    assert "install-nvidia-driver=True" not in create
+    remote = by["fold"][-1]
+    assert "--gpus all" not in remote
+    assert "--device cpu" in remote and "docker run -v /data/proteus" in remote
 
 
 def test_build_plan_uses_placeholders_when_unset(tmp_path):
