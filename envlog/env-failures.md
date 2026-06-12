@@ -72,6 +72,22 @@ flag: it pins determinism with **`--shuffle 0`** and still reads + logs the sing
 global `random_seed` from config for provenance. (If a future seedable MMseqs2
 step is added, it reads the same `random_seed`.)
 
+### S2 fold-class reference — USE BOTH (decided; informs the next PR)
+The single open decision flagged for the S2 PR — *what reference defines the
+α/β-hydrolase "fold class" S2 searches against* — is resolved: **use BOTH
+references, not one.**
+
+- **Curated ESTHER / representative α/β-hydrolase set** — high-precision
+  fold-class anchors (known α/β-hydrolase superfamily members).
+- **Broad AF-DB / PDB search + post-filter** — keeps the divergent dark tail
+  that a curated set alone would miss; the post-filter removes off-fold hits.
+
+S2 (next PR) searches the S1 query DB against both, then **unions and reconciles**
+the hits (curated for precision, broad+post-filter for recall). This stays true
+to the unseeded fold-CLASS intent: we match architecture, never specific PETase
+templates. Schema for the two reference DBs is deferred to the S2 PR — recorded
+here only so the decision is not re-litigated.
+
 ## Net env status (on this Linux container): YELLOW — scaffold only
 
 Not GREEN, and cannot be from here: no Apple Silicon to exercise MPS, no osx-arm64
