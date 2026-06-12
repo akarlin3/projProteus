@@ -32,7 +32,7 @@ import json
 import os
 import sys
 
-from proteus.calibrate import analyze_controls, score_analysis
+from proteus.calibrate import analyze_controls, recovery_screen, score_analysis
 from proteus.s4_geometry import analyze_model
 from proteus.s5_cleft_filter import analyze_cleft, composite_from_anchor
 from proteus.utils import DEFAULT_CONFIG, REPO, load_config
@@ -41,7 +41,13 @@ from proteus.utils import DEFAULT_CONFIG, REPO, load_config
 def build_control_anchor(cfg: dict, struct_dir: str) -> dict:
     """Run the calibration harness on the controls and extract the scoring anchor
     + operating point the screen scores candidates against. Reuses the exact S4/S5
-    path so the screen's threshold is the calibrated one, not a fresh guess."""
+    path so the screen's threshold is the calibrated one, not a fresh guess.
+
+    The operating point is `s5_cleft_filter.operating_point` (production | widened):
+    production gates at the lowest positive control (conservative); widened lowers the
+    line to the held-out divergent-positive recovery line (max divergent recall, still
+    precision 1.0 vs the control negatives). Widened falls back to production if no
+    recovery structure clears the line."""
     analysis = analyze_controls(cfg, struct_dir)
     cal = score_analysis(analysis, cfg)
     op = cal.get("operating_point") or {}
@@ -49,9 +55,23 @@ def build_control_anchor(cfg: dict, struct_dir: str) -> dict:
         raise RuntimeError(
             "calibration produced no operating point (need >=1 positive control "
             "with a catalytic pocket) — cannot screen candidates without a threshold")
+
+    production_thr = op["threshold"]
+    threshold, op_label, widened = production_thr, "production", None
+    requested = str(cfg.get("s5_cleft_filter", {}).get("operating_point", "production")).lower()
+    if requested == "widened":
+        w = recovery_screen(cfg, struct_dir, cal).get("widened_operating_point")
+        if w and w.get("threshold") is not None:
+            threshold, op_label, widened = w["threshold"], "widened", w
+        else:
+            op_label = "production (widened requested; no recovery structure cleared the line)"
+
     return {
         "anchor": cal["anchor"],
-        "threshold": op["threshold"],
+        "threshold": threshold,
+        "production_threshold": production_thr,
+        "operating_point": op_label,
+        "widened": widened,
         "mode": cal["mode"],
         "positive_ids": cal["positive_ids"],
         "separated": cal["verdict"].get("separated"),
@@ -128,8 +148,13 @@ def screen_folded(folded_dir: str, cfg: dict, struct_dir: str) -> dict:
                            "(no s3_results.json and no *.pdb)")
 
     print(f"[screen] anchor={cal['positive_ids']} mode={cal['mode']} "
-          f"threshold={cal['threshold']:.4f} "
+          f"operating_point={cal['operating_point']} threshold={cal['threshold']:.4f} "
           f"(controls separated={cal['separated']}, margin={cal['margin']})")
+    if cal.get("widened"):
+        w = cal["widened"]
+        print(f"[screen] widened line keeps divergent positives {w.get('includes_recovery')} "
+              f"at precision={w.get('precision')} (production line was "
+              f"{cal['production_threshold']:.4f})")
 
     candidates = []
     for item in inputs:
@@ -152,6 +177,8 @@ def screen_folded(folded_dir: str, cfg: dict, struct_dir: str) -> dict:
     return {
         "folded_dir": folded_dir,
         "threshold": cal["threshold"],
+        "production_threshold": cal.get("production_threshold"),
+        "operating_point": cal.get("operating_point"),
         "anchor_mode": cal["mode"],
         "positive_ids": cal["positive_ids"],
         "n_screened": len(candidates),

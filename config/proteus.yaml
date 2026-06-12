@@ -130,6 +130,19 @@ s5_cleft_filter:
   # Positive anchor set for z-scoring (LCC_WT=4EB0 is the LCC positive; 6THS is the
   # S165A trap and is NOT a positive). Calibration centres metrics on these.
   positive_controls: [IsPETase, LCC_WT]
+  # Operating point the production SCREEN gates candidates on:
+  #   production : threshold = lowest positive control composite. Conservative — keeps
+  #                the IsPETase/LCC anchor by construction. DEFAULT.
+  #   widened    : lower the line to also keep every HELD-OUT divergent positive
+  #                (recovery controls, e.g. archaeal PET46) that still scores above
+  #                EVERY negative. Recovery validated this holds precision 1.0 against
+  #                the control negatives, so it maximises divergent recall — the right
+  #                setting when MINING for sequence-divergent PETases. Note: widening
+  #                trades precision for recall on a real corpus (the precision=1.0 is
+  #                only proven against the control negatives), so it admits more
+  #                candidates. Falls back to production if no recovery structure is
+  #                present / clears the line.
+  operating_point: production          # production | widened
   # Catalytic-pocket selection: pick the fpocket pocket whose centre is nearest the
   # catalytic Ser OG; skip the model if none is within this distance.
   catalytic_pocket_max_dist: 12.0      # Angstrom
