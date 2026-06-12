@@ -59,21 +59,32 @@ def _sha256(path: str) -> str:
 def preconditions(cfg: dict, struct_dir: str) -> dict:
     """Enumerate every precondition for calibration. Returns {ok: bool, checks: [...]}.
 
-    Calibration cannot run without (a) a working env (torch/biotite/biopython + fpocket
-    on PATH), (b) the control structures present with sha256 matching MANIFEST.json, and
-    (c) a config with the s4_geometry/s5_cleft_filter blocks."""
+    Calibration cannot run without (a) a working env (biotite/biopython + fpocket on
+    PATH), (b) the control structures present with sha256 matching MANIFEST.json, and
+    (c) a config with the s4_geometry/s5_cleft_filter blocks. `torch` is checked but
+    ADVISORY only: it is the S3-fold dependency, and calibration/recovery (S4 geometry +
+    S5 cleft) never import it. In this project's topology folding runs on the GCE burst
+    and the local box is torch-free by design, so a missing torch must not block
+    calibration — it is reported as a warning, not a hard failure."""
     checks = []
 
-    def add(name, ok, detail):
-        checks.append({"name": name, "ok": bool(ok), "detail": detail})
+    def add(name, ok, detail, optional=False):
+        checks.append({"name": name, "ok": bool(ok), "detail": detail, "optional": bool(optional)})
 
-    # (a) environment
-    for mod in ("torch", "biotite", "Bio"):
+    # (a) environment. biotite/biopython are required (S4/S5); torch is advisory (S3 only).
+    for mod in ("biotite", "Bio"):
         try:
             __import__(mod)
             add(f"import {mod}", True, "ok")
         except Exception as exc:  # noqa: BLE001
             add(f"import {mod}", False, f"{type(exc).__name__}: {exc}")
+    try:
+        __import__("torch")
+        add("import torch", True, "ok (S3-fold only)", optional=True)
+    except Exception as exc:  # noqa: BLE001
+        add("import torch", False,
+            f"{type(exc).__name__}: {exc} — S3-fold only, not used by calibration",
+            optional=True)
     fp = shutil.which("fpocket")
     add("fpocket on PATH", fp is not None, fp or "not found — install fpocket")
 
@@ -111,13 +122,20 @@ def preconditions(cfg: dict, struct_dir: str) -> dict:
     add("config s5_cleft_filter block", "s5_cleft_filter" in cfg,
         "present" if "s5_cleft_filter" in cfg else "MISSING")
 
-    return {"ok": all(c["ok"] for c in checks), "checks": checks}
+    # Only REQUIRED checks gate the run; advisory checks (e.g. torch) surface as warnings.
+    return {"ok": all(c["ok"] for c in checks if not c.get("optional")), "checks": checks}
 
 
 def print_precondition_report(audit: dict) -> None:
     print("=== PRECONDITION REPORT (Checkpoint 0) ===")
     for c in audit["checks"]:
-        print(f"  [{'PASS' if c['ok'] else 'FAIL'}] {c['name']}: {c['detail']}")
+        if c["ok"]:
+            tag = "PASS"
+        elif c.get("optional"):
+            tag = "WARN"
+        else:
+            tag = "FAIL"
+        print(f"  [{tag}] {c['name']}: {c['detail']}")
     print(f"  -> {'GO' if audit['ok'] else 'STOP — preconditions unmet'}")
 
 
