@@ -83,6 +83,33 @@ def test_screen_flags_petase_positives_not_negatives(tmp_path):
         assert c["composite"] < summary["threshold"], "negative must score below the line"
 
 
+def test_widened_operating_point_lowers_the_line(tmp_path):
+    """operating_point=widened lowers the screen threshold to the held-out divergent-
+    positive recovery line (max divergent recall), while production stays at the
+    conservative lowest-positive line. Requires the recovery controls."""
+    import copy
+    _guard()
+    recov = ["8B4U", "4WFI", "4CG1"]  # PET46, Cut190, TfCut2 — held-out divergent positives
+    missing = [p for p in recov if not os.path.exists(os.path.join(STRUCT, f"{p}.pdb"))]
+    if missing:
+        pytest.skip(f"recovery controls not fetched: {missing} — run controls/fetch_controls.py")
+
+    cfg = load_config()
+    prod = build_control_anchor(cfg, STRUCT)
+    assert prod["operating_point"] == "production"
+
+    wcfg = copy.deepcopy(cfg)
+    wcfg["s5_cleft_filter"]["operating_point"] = "widened"
+    wide = build_control_anchor(wcfg, STRUCT)
+    assert wide["operating_point"] == "widened"
+    # the held-out divergent positives sit below the production line, so widening
+    # strictly lowers the threshold (never raises it) and keeps them at precision 1.0
+    assert wide["threshold"] <= prod["threshold"]
+    assert wide["production_threshold"] == pytest.approx(prod["threshold"], abs=0.02)
+    assert wide["widened"] is not None and wide["widened"]["precision"] == 1.0
+    assert wide["widened"]["false_positives"] == 0
+
+
 def test_screen_threshold_matches_calibration_operating_point(tmp_path):
     """The screen scores against the calibrated anchor/threshold, never a fresh one."""
     _guard()
